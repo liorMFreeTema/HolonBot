@@ -1,0 +1,32 @@
+---
+- name: Collect and Send Fleet Telemetry
+  # This targets the vehicles directly
+  hosts: holons
+  gather_facts: no
+  vars:
+    influx_url: "http://influxdb:8086/write?db=fleet_data"
+
+  tasks:
+    - name: Copy telemetry script to the vehicle
+      copy:
+        src: collect_telemetry.sh
+        dest: /tmp/collect_telemetry.sh
+        mode: '0755'
+
+    - name: Run telemetry script on the vehicle
+      command: /tmp/collect_telemetry.sh
+      register: telemetry_output
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Send Metrics to InfluxDB from Jambo
+      uri:
+        url: "{{ influx_url }}"
+        method: POST
+        body: "{{ telemetry_output.stdout }}"
+        status_code: 204
+      # This is the magic line! It tells Ansible to run this specific task 
+      # from Jambo (localhost) so it can reach the local InfluxDB container.
+      delegate_to: localhost
+      when: telemetry_output.rc == 0 and telemetry_output.stdout != ""
+      ignore_errors: yes
