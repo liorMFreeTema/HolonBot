@@ -4,15 +4,12 @@
   connection: local
   gather_facts: no
   vars:
-    # URL to your InfluxDB (Using the container name 'influxdb' is best inside Docker)
-    # If this fails, replace 'influxdb' with the Tailscale IP of Jambo.
     influx_url: "http://influxdb:8086/write?db=fleet_data"
 
   tasks:
     - name: Ping every host in the inventory
       shell: "ping -c 1 -W 1 {{ hostvars[item].ansible_host }}"
-      # This loops through the group 'holons' (or 'all') in your inventory
-      loop: "{{ groups['all'] }}"
+      loop: "{{ groups['holons'] }}"
       register: ping_results
       ignore_errors: yes
       changed_when: false
@@ -21,13 +18,9 @@
       uri:
         url: "{{ influx_url }}"
         method: POST
-        # Data Logic:
-        # status=1 (Online), status=0 (Offline)
-        # ping_ms=X.X (Latency), ping_ms=0 (If offline)
+        # If ping succeeds, extract the time. If it fails, default to 0.
         body: >-
-          network_latency,host={{ item.item }}
-          status={{ 1 if item.rc == 0 else 0 }},
-          ping_ms={{ item.stdout | regex_search('time=([0-9.]+)', '\1') | first | default('0') }}
+          network_latency,host={{ item.item }} status={{ 1 if item.rc == 0 else 0 }},ping_ms={{ item.stdout | regex_search('time=[0-9.]+') | default('time=0', true) | replace('time=', '') }}
         status_code: 204
       loop: "{{ ping_results.results }}"
       ignore_errors: yes
